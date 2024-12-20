@@ -5,40 +5,21 @@
 #include <Adafruit_GFX.h>
 #include <FastLED_NeoMatrix.h>	// FastLED_NeoMatrix example for single NeoPixel Shield. By Marc MERLIN <marc_soft@merlins.org> Contains code (c) Adafruit, license BSD
 #include <FastLED.h>
-
-//------ fuer midi-in via library --------
 #include <MIDI.h>  // Add Midi Library
-//Create an instance of the library with default name, serial port and settings
+
 //midi::SerialMIDI<SerialPort, _Settings>::SerialMIDI [mit SerialPort=HardwareSerial, _Settings=midi::DefaultSerialSettings]
-//MIDI_CREATE_INSTANCE(HardwareSerial, Serial1, MIDI);
 HardwareSerial myHardwareSerial(0);
 MIDI_CREATE_INSTANCE(HardwareSerial, myHardwareSerial, MIDI);
 
-// gpio 43 and 44 are the serial pins (they should not conflict with the serial monitor) 
-//If you need other pins or information, in the documentation I explained everything (I hope) 
-//https://aaelectronics-docs.com/documentation/yulc/yulc.html
-
 const static boolean DEBUG = true;
 
-//=============================
-//#define USELEDMATRIXCONFIG
-//=============================
-#ifdef USELEDMATRIXCONFIG
-	#define LEDMATRIX
-	#include "neomatrix_config.h"
-#else
-	FastLED_NeoMatrix* matrix;
-#endif
-//===============================
-
-#define DATA_PIN_1            1 	// yulc channel 1
-#define DATA_PIN_2            2 	// yulc channel 2
+#define DATA_PIN_1          1 	// yulc channel 1
+#define DATA_PIN_2          2 	// yulc channel 2
 #define mw					22	// TODO: ausmerzen
 #define mh					23	// TODO: ausmerzen
 #define MATRIX_WIDTH       	22
 #define MATRIX_HEIGHT      	23
 #define DEFAULT_BRIGHTNESS	125
-int BRIGHTNESS				= DEFAULT_BRIGHTNESS; // 32 - Max is 255, 32 is a conservative value to not overload a USB power supply (500mA) for 12x12 pixels.
 #define MATRIX_TYPE         HORIZONTAL_ZIGZAG_MATRIX
 #define MATRIX_SIZE         (MATRIX_WIDTH * MATRIX_HEIGHT)
 #define NUMMATRIX			(MATRIX_WIDTH * MATRIX_HEIGHT)	// TODO: ausmerzen
@@ -46,11 +27,11 @@ int BRIGHTNESS				= DEFAULT_BRIGHTNESS; // 32 - Max is 255, 32 is a conservative
 #define COLOR_ORDER         RGB
 #define CHIPSET             WS2812B
 #define anz_LEDs			193 //fuer die stripe-git // git-board hat: 278
+#define green2 				255	//byte green2;
+#define center_x 			10	//byte center_x;
+#define center_y 			10	//byte center_y;
 
-#define green2 		255	//byte green2;
-#define center_x 	10	//byte center_x;
-#define center_y 	10	//byte center_y;
-
+FastLED_NeoMatrix* matrix;
 CRGB leds[NUMMATRIX];
 //=============================================
 
@@ -60,7 +41,6 @@ byte blue2;
 int col1;
 int col2;
 
-boolean progStroboIsBlack = false;	// for strobo
 volatile unsigned int millisToReduceCPUSpeed = 0;
 volatile unsigned int millisCounterTimer = 0;	// wird von den progs fürs timing bzw. delay-ersatz verwendet
 volatile unsigned int millisCounterForProgChange = 0;		// achtung!! -> kann nur bis 65.536 zaehlen!!
@@ -74,17 +54,10 @@ volatile byte nextSongPart = 0;
 volatile byte prog = 0;
 volatile boolean encoderButtonPushedLEDsOFF = false;	// for rotary encoder button push
 volatile boolean LEDsTurnedOff = false;	// übergeordnetes FLAG
-
 unsigned int lastLEDchange = millis();
 int ledState = LOW;             // ledState used to set the LED --TODO: nur test mit interner LED
-
 int zaehler = 0;
-int progMatrixZaehler = 0;
-int progScrollTextZaehler = MATRIX_WIDTH + 1;
-int progScrollEnde;
-boolean scannerGoesBack = false;
-int stage = 0;
-byte actualAnzahlLEDs = 0; // wird benutzt von fastBlinBling fuer die steigerung der anzahl LEDs
+int BRIGHTNESS	= DEFAULT_BRIGHTNESS; // 32 - Max is 255, 32 is a conservative value to not overload a USB power supply (500mA) for 12x12 pixels.
 
 CRGBPalette16 currentPalette;
 TBlendType    currentBlending;
@@ -572,71 +545,6 @@ extern const TProgmemRGBPalette16 matrixColors FL_PROGMEM =
 	CRGB::DarkGreen
 };
 
-CRGB getMatrixColor(int index) {
-	CRGB col = CRGB(0, 0, 0);
-	switch (index) {
-	case 0:
-		return col = CRGB(0, 0, 0);
-		break;
-	case 1:
-		return col = CRGB(1, 25, 1);
-		break;
-	case 2:
-		return col = CRGB(1, 25, 1);
-		break;
-	case 3:
-		return col = CRGB(1, 40, 1);
-		break;
-	case 4:
-		return col = CRGB(1, 80, 1);
-		break;
-	case 5:
-		return col = CRGB(1, 120, 1);
-		break;
-	case 6:
-		return col = CRGB(1, 150, 1);
-		break;
-	case 7:
-		return col = CRGB(1, 200, 1);
-		break;
-	case 8:
-		return col = CRGB(5, 255, 5);
-		break;
-	case 9:
-		return col = CRGB(10, 180, 10);
-		break;
-	case 10:
-		return col = CRGB(10, 160, 10);
-		break;
-	case 11:
-		return col = CRGB(20, 140, 20);
-		break;
-	case 12:
-		return col = CRGB(30, 120, 30);
-		break;
-	case 13:
-		return col = CRGB(50, 100, 50);
-		break;
-	case 14:
-		return col = CRGB(100, 150, 100);
-		break;
-	case 15:
-		return col = CRGB(180, 180, 180);
-		break;
-	}
-	return col;
-}
-
-void progGoTo(byte nextPart) {
-
-	//--- standard-part um dauer und naechstes programm zu speichern ----
-	if (!nextChangeMillisAlreadyCalculated) {
-		nextChangeMillis = 0;
-		nextSongPart = nextPart;
-		nextChangeMillisAlreadyCalculated = true;
-	}
-}
-
 void switchToPart(byte part) {
 
 	prog = part;
@@ -644,8 +552,6 @@ void switchToPart(byte part) {
 	millisCounterTimer = 0;
 	millisCounterForProgChange = 0;
 	zaehler = 0;	// globalen zaehler auf null
-	progScrollTextZaehler = MATRIX_WIDTH + 1;
-
 	//--- initializeValues ---
 	flag_switchToNextSongPart = false;
 }
